@@ -1,60 +1,60 @@
 <template>
-  <section class="card p-5">
-    <h2 class="text-2xl font-black text-slate-900">Рейтинг</h2>
-    <p class="mt-2 text-slate-600">MVP-режим: сумарні бали рахуються за звичайним імʼям дитини з усіх перевірених неділь.</p>
-    <LoadingState v-if="loading" class="mt-4" />
-    <div v-else class="mt-5 space-y-3">
-      <article v-for="(row, index) in rows" :key="row.nameNormalized" class="flex items-center justify-between rounded-2xl bg-white p-4">
-        <div class="flex items-center gap-3">
-          <div class="grid h-10 w-10 place-items-center rounded-xl bg-amber-100 font-black text-amber-700">{{ index + 1 }}</div>
-          <div>
-            <h3 class="font-black text-slate-900">{{ row.childName }}</h3>
-            <p class="text-xs text-slate-500">Перевірено неділь: {{ row.reviewedSubmissionsCount }}</p>
-          </div>
-        </div>
-        <div class="text-right">
-          <div class="text-2xl font-black text-indigo-600">{{ row.totalScore }}</div>
-          <div class="text-xs font-bold text-slate-500">балів</div>
-        </div>
-      </article>
-      <p v-if="rows.length === 0" class="text-slate-600">Поки немає перевірених відповідей.</p>
+  <section class="card p-3 sm:p-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 class="text-xl font-black text-slate-900">Рейтинг</h2>
+      <select v-model="selectedSession" aria-label="Період рейтингу" class="min-w-0 max-w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800" :disabled="loading">
+        <option value="">Загальний · усі неділі</option>
+        <option v-for="session in sessions" :key="session.id" :value="session.id">{{ session.date }} · {{ session.title }}</option>
+      </select>
     </div>
+    <LoadingState v-if="loading" class="mt-3" />
+    <div v-else-if="error" role="alert" class="mt-3 text-sm text-rose-700">
+      {{ error }} <button class="font-bold underline" @click="load">Спробувати ще раз</button>
+    </div>
+    <template v-else>
+      <p class="my-2 text-xs text-slate-500">Лише перевірені відповіді · Учасників: {{ rows.length }}</p>
+      <ol class="divide-y divide-slate-100 overflow-hidden rounded-xl bg-white">
+        <li v-for="row in rows" :key="row.key" class="flex items-center gap-3 px-3 py-2">
+          <span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs font-black" :class="row.rank <= 3 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'">{{ row.rank }}</span>
+          <div class="min-w-0 flex-1">
+            <h3 class="break-words text-sm font-bold text-slate-900">{{ row.childName }}</h3>
+            <p v-if="!selectedSession" class="text-xs text-slate-500">Неділь: {{ row.sundayCount }}</p>
+          </div>
+          <span class="shrink-0 text-lg font-black tabular-nums text-indigo-600">{{ row.totalScore }} <span class="text-xs font-medium text-slate-500">б.</span></span>
+        </li>
+      </ol>
+      <p v-if="!rows.length" class="py-4 text-sm text-slate-500">{{ selectedSession ? 'За цю неділю ще немає перевірених відповідей.' : 'Поки немає перевірених відповідей.' }}</p>
+    </template>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import LoadingState from '../components/LoadingState.vue'
 import { getReviewedSubmissions } from '../services/submissions'
+import { listSessions } from '../services/sessions'
+import type { Session, Submission } from '../types'
+import { buildLeaderboard } from '../utils/leaderboard'
 
-type NameScoreRow = {
-  nameNormalized: string
-  childName: string
-  totalScore: number
-  reviewedSubmissionsCount: number
-}
-
-const rows = ref<NameScoreRow[]>([])
+const submissions = ref<Submission[]>([])
+const sessions = ref<Session[]>([])
+const selectedSession = ref('')
 const loading = ref(true)
+const error = ref('')
+const rows = computed(() => buildLeaderboard(submissions.value, selectedSession.value))
 
-onMounted(async () => {
-  const submissions = await getReviewedSubmissions()
-  const byName = new Map<string, NameScoreRow>()
-
-  for (const submission of submissions) {
-    const key = submission.childNameNormalized || submission.childName.trim().toLowerCase()
-    const current = byName.get(key) ?? {
-      nameNormalized: key,
-      childName: submission.childName,
-      totalScore: 0,
-      reviewedSubmissionsCount: 0,
-    }
-    current.totalScore += submission.totalScore
-    current.reviewedSubmissionsCount += 1
-    byName.set(key, current)
+async function load() {
+  loading.value = true
+  error.value = ''
+  try {
+    const [answers, sundays] = await Promise.all([getReviewedSubmissions(), listSessions()])
+    submissions.value = answers
+    sessions.value = sundays
+  } catch {
+    error.value = 'Не вдалося завантажити рейтинг.'
+  } finally {
+    loading.value = false
   }
-
-  rows.value = [...byName.values()].sort((a, b) => b.totalScore - a.totalScore)
-  loading.value = false
-})
+}
+onMounted(load)
 </script>
