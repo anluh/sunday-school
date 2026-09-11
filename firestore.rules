@@ -15,13 +15,21 @@ service cloud.firestore {
       allow create, update, delete: if isTeacher();
     }
 
-    // Kept for the future Gmail/statistics version. MVP by plain name does not depend on it.
+    function isGoogleUser() {
+      return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
     match /users/{userId} {
-      allow read, write: if isTeacher();
+      allow read: if isTeacher() || (request.auth != null && request.auth.uid == userId);
+      allow create: if isGoogleUser() && request.auth.uid == userId &&
+        request.resource.data.uid == userId && request.resource.data.totalScore == 0 &&
+        request.resource.data.reviewedSubmissionsCount == 0 && request.resource.data.lastReviewedAt == null;
+      allow update: if isTeacher() || (isGoogleUser() && request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'email', 'photoURL', 'updatedAt']));
+      allow delete: if isTeacher();
     }
 
     match /submissions/{submissionId} {
-      allow create: if
+      allow create: if isGoogleUser() &&
         request.resource.data.keys().hasOnly([
           'sessionId', 'childName', 'childNameNormalized', 'childUid', 'childEmail', 'childPhotoURL', 'childNameIdPart',
           'answers', 'scores', 'totalScore', 'reviewed', 'submittedAt'
@@ -29,8 +37,8 @@ service cloud.firestore {
         request.resource.data.childName is string &&
         request.resource.data.childName.size() >= 2 &&
         request.resource.data.childNameNormalized is string &&
-        request.resource.data.childUid == '' &&
-        request.resource.data.childEmail == '' &&
+        request.resource.data.childUid == request.auth.uid &&
+        request.resource.data.childEmail == request.auth.token.email &&
         request.resource.data.totalScore == 0 &&
         request.resource.data.reviewed == false &&
         request.resource.data.scores == {};

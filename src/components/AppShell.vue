@@ -11,7 +11,15 @@
         </RouterLink>
         <RouterLink to="/admin" class="rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-slate-700 shadow-sm">Викладач</RouterLink>
       </header>
+      <div v-if="authState.user" class="mb-4 flex items-center justify-between gap-3 text-sm">
+        <span>{{ authState.user.displayName || authState.user.email }}</span>
+        <button class="font-bold text-indigo-700" @click="logoutUser">Вийти</button>
+      </div>
       <slot />
     </div>
   </main>
 </template>
+
+<script setup lang="ts">
+import { authState, logoutUser } from '../stores/auth'
+</script>

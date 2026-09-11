@@ -12,7 +12,7 @@ import {
   where,
   Timestamp,
 } from 'firebase/firestore'
-import { getFirebaseDb } from '../firebase'
+import { getFirebaseAuth, getFirebaseDb } from '../firebase'
 import { EMPTY_ANSWERS } from '../constants/questions'
 import type { AnswerKey, Answers, ChildReceipt, Scores, Submission, UserScoreStats } from '../types'
 import { getEndOfDay } from '../utils/date'
@@ -92,6 +92,9 @@ export function buildSubmissionId(sessionId: string, childName: string, childUid
 }
 
 export async function createSubmission(input: { sessionId: string; childName: string; answers: Answers; childUid?: string; childEmail?: string; childPhotoURL?: string | null }): Promise<{ submissionId: string; receiptToken: string }> {
+  const user = getFirebaseAuth().currentUser
+  if (!user || !user.providerData.some(provider => provider.providerId === 'google.com')) throw new Error('Увійди через Google, щоб відправити відповіді.')
+  input = { ...input, childUid: user.uid, childEmail: user.email || '', childPhotoURL: user.photoURL }
   const db = getFirebaseDb()
   const childNameNormalized = normalizeName(input.childName)
   const childNameIdPart = createStableIdPart(`${input.sessionId}:${childNameNormalized}`)

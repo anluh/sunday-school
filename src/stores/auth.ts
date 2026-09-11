@@ -7,6 +7,8 @@ import {
   type User,
 } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { clearLocalSubmissionSession } from '../utils/localSubmissionSession'
+import { clearSubmissionDraft } from '../utils/submissionDraft'
 import { reactive } from 'vue'
 import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from '../firebase'
 
@@ -29,9 +31,14 @@ export function initAuthListener(): void {
   if (subscribed || !isFirebaseConfigured) return
   subscribed = true
   onAuthStateChanged(getFirebaseAuth(), async (user) => {
+    if (localStorage.getItem('sunday-school-account-uid') !== (user?.uid || '')) {
+      clearLocalSubmissionSession()
+      clearSubmissionDraft()
+    }
+    localStorage.setItem('sunday-school-account-uid', user?.uid || '')
     authState.user = user
     authState.ready = true
-    if (user) await ensureUserProfile(user)
+    if (user && !isTeacherUser(user)) await ensureUserProfile(user).catch(console.error)
   })
 }
 

@@ -1,8 +1,14 @@
 <template>
-  <LoadingState v-if="loading" />
+  <LoadingState v-if="loading || !authState.ready" />
   <EmptyState v-else-if="configError" title="Потрібно підключити Firebase">
     {{ configError }}
   </EmptyState>
+  <section v-else-if="!authState.user || isTeacherUser(authState.user)" class="card mx-auto max-w-md space-y-4 p-6">
+    <h2 class="text-2xl font-black">Вхід учня</h2>
+    <p>Увійди через Google, щоб заповнити відповіді.</p>
+    <button class="btn-primary w-full" :disabled="signingIn" @click="googleLogin">{{ signingIn ? 'Входимо…' : 'Увійти через Google' }}</button>
+    <p v-if="error" role="alert" class="text-rose-700">{{ error }}</p>
+  </section>
   <section v-else-if="ownReceipt" class="card p-5">
     <p class="mb-2 text-sm font-bold uppercase tracking-wide text-emerald-600">Відправлено</p>
     <h2 class="text-2xl font-black text-slate-900">{{ ownReceipt.childName }}, твої відповіді збережені</h2>
@@ -35,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import EmptyState from '../components/EmptyState.vue'
 import LoadingState from '../components/LoadingState.vue'
@@ -47,6 +53,17 @@ import { createSubmission, getOwnSubmissionFromLocalSession } from '../services/
 import type { Answers, ChildReceipt, Session } from '../types'
 import { formatDateTime, getEndOfDay } from '../utils/date'
 import { clearSubmissionDraft, getSubmissionDraft, saveSubmissionDraft } from '../utils/submissionDraft'
+
+import { authState, isTeacherUser, loginWithGoogle } from '../stores/auth'
+
+const signingIn = ref(false)
+async function googleLogin() {
+  signingIn.value = true
+  error.value = ''
+  try { await loginWithGoogle() }
+  catch (err) { error.value = err instanceof Error ? err.message : 'Не вдалося увійти через Google' }
+  finally { signingIn.value = false }
+}
 
 const router = useRouter()
 const loading = ref(true)
@@ -75,14 +92,21 @@ watch(
   { deep: true },
 )
 
-onMounted(load)
+watch(() => [authState.ready, authState.user?.uid], load, { immediate: true })
 
 async function load() {
+  ownReceipt.value = null
+  activeSession.value = null
+  childName.value = ''
+  answers.value = { ...EMPTY_ANSWERS }
   try {
     if (!isFirebaseConfigured) {
       configError.value = 'Доступ до Firebase буде додано пізніше. Після цього форма запрацює.'
       return
     }
+    if (!authState.ready || !authState.user || isTeacherUser(authState.user)) return
+    loading.value = true
+    childName.value = authState.user.displayName || ''
     ownReceipt.value = await getOwnSubmissionFromLocalSession()
     if (!ownReceipt.value) {
       activeSession.value = await getActiveSession()
