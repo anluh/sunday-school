@@ -1,10 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
     function isTeacher() {
       return request.auth != null && request.auth.token.email == 'teacher@sunday-school.local';
     }
@@ -19,42 +15,33 @@ service cloud.firestore {
       allow create, update, delete: if isTeacher();
     }
 
+    // Kept for the future Gmail/statistics version. MVP by plain name does not depend on it.
     match /users/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || isTeacher());
-      allow list: if isTeacher();
-      allow create: if isSignedIn() && request.auth.uid == userId &&
-        request.resource.data.uid == request.auth.uid &&
-        request.resource.data.email == request.auth.token.email &&
-        request.resource.data.totalScore == 0 &&
-        request.resource.data.reviewedSubmissionsCount == 0;
-      allow update: if isSignedIn() && request.auth.uid == userId &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'email', 'photoURL', 'uid', 'updatedAt']) &&
-        request.resource.data.uid == request.auth.uid &&
-        request.resource.data.email == request.auth.token.email;
-      allow update, delete: if isTeacher();
+      allow read, write: if isTeacher();
     }
 
     match /submissions/{submissionId} {
       allow create: if
-        isSignedIn() &&
-        request.resource.data.childUid == request.auth.uid &&
-        request.resource.data.childEmail == request.auth.token.email &&
         request.resource.data.keys().hasOnly([
           'sessionId', 'childName', 'childNameNormalized', 'childUid', 'childEmail', 'childPhotoURL', 'childNameIdPart',
           'answers', 'scores', 'totalScore', 'reviewed', 'submittedAt'
         ]) &&
+        request.resource.data.childName is string &&
+        request.resource.data.childName.size() >= 2 &&
+        request.resource.data.childNameNormalized is string &&
+        request.resource.data.childUid == '' &&
+        request.resource.data.childEmail == '' &&
         request.resource.data.totalScore == 0 &&
         request.resource.data.reviewed == false &&
         request.resource.data.scores == {};
 
-      allow get: if isSignedIn() && (resource.data.childUid == request.auth.uid || isTeacher());
+      allow get: if true;
       allow list, update, delete: if isTeacher();
     }
 
     match /childReceipts/{receiptId} {
-      allow get: if isSignedIn();
+      allow get, create: if true;
       allow list: if false;
-      allow create: if isSignedIn();
       allow update, delete: if isTeacher();
     }
   }

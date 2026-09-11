@@ -3,12 +3,6 @@
   <EmptyState v-else-if="configError" title="Потрібно підключити Firebase">
     {{ configError }}
   </EmptyState>
-  <EmptyState v-else-if="!authState.user" title="Увійди через Gmail">
-    <div class="space-y-4">
-      <p>Щоб кожна дитина бачила тільки свої відповіді і бали зберігались за акаунтом, потрібно увійти через Google.</p>
-      <button class="btn-primary" @click="loginWithGoogle">Увійти через Google</button>
-    </div>
-  </EmptyState>
   <section v-else-if="ownReceipt" class="card p-5">
     <p class="mb-2 text-sm font-bold uppercase tracking-wide text-emerald-600">Відправлено</p>
     <h2 class="text-2xl font-black text-slate-900">{{ ownReceipt.childName }}, твої відповіді збережені</h2>
@@ -31,10 +25,6 @@
       <p class="mt-2 text-slate-600">Заповнено {{ completedCount }} з {{ QUESTIONS.length }}</p>
       <label class="mt-5 block text-sm font-extrabold text-slate-800" for="childName">Твоє імʼя</label>
       <input id="childName" v-model="childName" class="input mt-2" placeholder="Наприклад: Марко" autocomplete="name" />
-      <div class="mt-3 flex items-center gap-3 rounded-2xl bg-white p-3 text-sm text-slate-600">
-        <img v-if="authState.user?.photoURL" :src="authState.user.photoURL" alt="" class="h-8 w-8 rounded-full" />
-        <span>Акаунт: <strong>{{ authState.user?.email }}</strong></span>
-      </div>
     </section>
 
     <QuestionCard v-for="(question, index) in QUESTIONS" :key="question.key" v-model="answers[question.key]" :question="question" :index="index" />
@@ -54,7 +44,6 @@ import { EMPTY_ANSWERS, QUESTIONS } from '../constants/questions'
 import { isFirebaseConfigured } from '../firebase'
 import { getActiveSession } from '../services/sessions'
 import { createSubmission, getOwnSubmissionFromLocalSession } from '../services/submissions'
-import { authState, initAuthListener, loginWithGoogle } from '../stores/auth'
 import type { Answers, ChildReceipt, Session } from '../types'
 import { formatDateTime, getEndOfDay } from '../utils/date'
 import { clearSubmissionDraft, getSubmissionDraft, saveSubmissionDraft } from '../utils/submissionDraft'
@@ -94,10 +83,6 @@ async function load() {
       configError.value = 'Доступ до Firebase буде додано пізніше. Після цього форма запрацює.'
       return
     }
-    initAuthListener()
-    await waitForAuthReady()
-    if (!authState.user) return
-    childName.value = authState.user.displayName || authState.user.email?.split('@')[0] || ''
     ownReceipt.value = await getOwnSubmissionFromLocalSession()
     if (!ownReceipt.value) {
       activeSession.value = await getActiveSession()
@@ -111,7 +96,7 @@ async function load() {
 }
 
 async function submit() {
-  if (!activeSession.value || !canSubmit.value || !authState.user) return
+  if (!activeSession.value || !canSubmit.value) return
   error.value = ''
   submitting.value = true
   try {
@@ -119,9 +104,6 @@ async function submit() {
       sessionId: activeSession.value.id,
       childName: childName.value,
       answers: answers.value,
-      childUid: authState.user.uid,
-      childEmail: authState.user.email || '',
-      childPhotoURL: authState.user.photoURL,
     })
     clearSubmissionDraft()
     await router.push('/thanks')
@@ -139,15 +121,4 @@ function restoreDraft(sessionId: string) {
   answers.value = { ...EMPTY_ANSWERS, ...draft.answers }
 }
 
-async function waitForAuthReady() {
-  if (authState.ready) return
-  await new Promise<void>((resolve) => {
-    const timer = setInterval(() => {
-      if (authState.ready) {
-        clearInterval(timer)
-        resolve()
-      }
-    }, 25)
-  })
-}
 </script>

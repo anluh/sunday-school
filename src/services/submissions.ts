@@ -86,11 +86,16 @@ function mapUserScoreStats(id: string, data: Record<string, any>): UserScoreStat
   }
 }
 
-export async function createSubmission(input: { sessionId: string; childName: string; answers: Answers; childUid: string; childEmail: string; childPhotoURL?: string | null }): Promise<{ submissionId: string; receiptToken: string }> {
+export function buildSubmissionId(sessionId: string, childName: string, childUid = ''): string {
+  const identity = childUid || normalizeName(childName)
+  return `${sessionId}_${createStableIdPart(`${sessionId}:${identity}`)}`
+}
+
+export async function createSubmission(input: { sessionId: string; childName: string; answers: Answers; childUid?: string; childEmail?: string; childPhotoURL?: string | null }): Promise<{ submissionId: string; receiptToken: string }> {
   const db = getFirebaseDb()
   const childNameNormalized = normalizeName(input.childName)
-  const childNameIdPart = createStableIdPart(`${input.sessionId}:${input.childUid}`)
-  const submissionId = `${input.sessionId}_${input.childUid}`
+  const childNameIdPart = createStableIdPart(`${input.sessionId}:${childNameNormalized}`)
+  const submissionId = buildSubmissionId(input.sessionId, input.childName, input.childUid)
   const receiptToken = createRandomToken()
   const expiresAt = getEndOfDay()
   const submissionRef = doc(db, 'submissions', submissionId)
@@ -104,8 +109,8 @@ export async function createSubmission(input: { sessionId: string; childName: st
     sessionId: input.sessionId,
     childName: input.childName.trim(),
     childNameNormalized,
-    childUid: input.childUid,
-    childEmail: input.childEmail,
+    childUid: input.childUid ?? '',
+    childEmail: input.childEmail ?? '',
     childPhotoURL: input.childPhotoURL ?? null,
     childNameIdPart,
     answers: input.answers,
