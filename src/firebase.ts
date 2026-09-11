@@ -1,5 +1,5 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
+import { initializeAuth, browserLocalPersistence, browserPopupRedirectResolver, type Auth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
@@ -14,6 +14,7 @@ const firebaseConfig = {
 export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId)
 
 let app: FirebaseApp | null = null
+let auth: Auth | null = null
 
 function getFirebaseApp(): FirebaseApp {
   if (!isFirebaseConfigured) {
@@ -24,7 +25,11 @@ function getFirebaseApp(): FirebaseApp {
 }
 
 export function getFirebaseAuth() {
-  return getAuth(getFirebaseApp())
+  auth ??= initializeAuth(getFirebaseApp(), {
+    persistence: browserLocalPersistence,
+    popupRedirectResolver: browserPopupRedirectResolver,
+  })
+  return auth
 }
 
 export function getFirebaseDb() {

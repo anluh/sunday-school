@@ -30,7 +30,7 @@
           <ScoreButtons :model-value="submission.scores[question.key]" @update:model-value="score(submission.id, question.key, $event)" />
         </section>
       </div>
-      <button class="btn-primary mt-4 w-full sm:w-auto" :disabled="submission.reviewed" @click="review(submission.id)">Позначити як перевірено</button>
+      <button class="btn-primary mt-4 w-full sm:w-auto" :disabled="saving" @click="review(submission.id)">{{ saving ? 'Зберігаємо…' : submission.reviewed ? 'Виправити' : 'Позначити як перевірено' }}</button>
     </article>
     <div v-if="error" class="rounded-2xl bg-rose-100 p-4 font-bold text-rose-700">{{ error }}</div>
   </section>
@@ -43,7 +43,7 @@ import LoadingState from '../components/LoadingState.vue'
 import ScoreButtons from '../components/ScoreButtons.vue'
 import { QUESTIONS } from '../constants/questions'
 import { listSessions } from '../services/sessions'
-import { getSubmissionsBySession, markReviewed, updateAnswerScore } from '../services/submissions'
+import { getSubmissionsBySession, markReviewed, updateAnswerScore, correctReviewedScores, calculateTotalScore } from '../services/submissions'
 import type { AnswerKey, Session, Submission } from '../types'
 import { formatDate, formatDateTime } from '../utils/date'
 
@@ -52,6 +52,7 @@ const submissions = ref<Submission[]>([])
 const selectedSessionId = ref('')
 const loading = ref(false)
 const error = ref('')
+const saving = ref(false)
 
 onMounted(async () => {
   sessions.value = await listSessions()
@@ -70,12 +71,39 @@ async function loadSubmissions() {
 }
 
 async function score(submissionId: string, answerKey: AnswerKey, value: number) {
-  await updateAnswerScore(submissionId, answerKey, value)
-  await loadSubmissions()
+  if (saving.value) return
+  const submission = submissions.value.find(item => item.id === submissionId)
+  if (submission?.reviewed) {
+    submission.scores = { ...submission.scores, [answerKey]: value }
+    submission.totalScore = calculateTotalScore(submission.scores)
+    return
+  }
+  saving.value = true
+  error.value = ''
+  try {
+    await updateAnswerScore(submissionId, answerKey, value)
+    // Update only this row, preserving corrections drafted in other rows.
+    if (submission) {
+      submission.scores = { ...submission.scores, [answerKey]: value }
+      submission.totalScore = calculateTotalScore(submission.scores)
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Не вдалося зберегти оцінку'
+  } finally { saving.value = false }
 }
 
 async function review(submissionId: string) {
-  await markReviewed(submissionId)
-  await loadSubmissions()
+  if (saving.value) return
+  const submission = submissions.value.find(item => item.id === submissionId)
+  if (!submission) return
+  saving.value = true
+  error.value = ''
+  try {
+    if (submission.reviewed) await correctReviewedScores(submissionId, { ...submission.scores })
+    else await markReviewed(submissionId)
+    submission.reviewed = true
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Не вдалося зберегти оцінки'
+  } finally { saving.value = false }
 }
 </script>

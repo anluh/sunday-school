@@ -9,6 +9,7 @@
     <button class="btn-primary w-full" :disabled="signingIn" @click="googleLogin">{{ signingIn ? 'Входимо…' : 'Увійти через Google' }}</button>
     <p v-if="error" role="alert" class="text-rose-700">{{ error }}</p>
   </section>
+  <div v-else-if="error" role="alert" class="card p-5 text-rose-700">{{ error }} <button class="font-bold underline" @click="load">Спробувати ще раз</button></div>
   <section v-else-if="ownReceipt" class="card p-5">
     <p class="mb-2 text-sm font-bold uppercase tracking-wide text-emerald-600">Відправлено</p>
     <h2 class="text-2xl font-black text-slate-900">{{ ownReceipt.childName }}, твої відповіді збережені</h2>
@@ -19,7 +20,6 @@
         <p class="mt-2 whitespace-pre-wrap text-slate-700">{{ ownReceipt.answers[question.key] || '—' }}</p>
       </article>
     </div>
-    <p class="mt-5 rounded-2xl bg-indigo-50 p-4 text-sm font-semibold text-indigo-800">Бали бачить тільки викладач. Ти можеш переглядати цю відповідь з цього пристрою до кінця дня.</p>
   </section>
   <EmptyState v-else-if="!activeSession" title="Зараз немає відкритого завдання">
     Викладач відкриє неділю, і тут зʼявиться форма для відповідей.
@@ -48,8 +48,8 @@ import LoadingState from '../components/LoadingState.vue'
 import QuestionCard from '../components/QuestionCard.vue'
 import { EMPTY_ANSWERS, QUESTIONS } from '../constants/questions'
 import { isFirebaseConfigured } from '../firebase'
-import { getActiveSession } from '../services/sessions'
-import { createSubmission, getOwnSubmissionFromLocalSession } from '../services/submissions'
+import { getActiveSession, listSessions } from '../services/sessions'
+import { createSubmission, getOwnSubmissionForSession } from '../services/submissions'
 import type { Answers, ChildReceipt, Session } from '../types'
 import { formatDateTime, getEndOfDay } from '../utils/date'
 import { clearSubmissionDraft, getSubmissionDraft, saveSubmissionDraft } from '../utils/submissionDraft'
@@ -92,9 +92,13 @@ watch(
   { deep: true },
 )
 
+let loadVersion = 0
+
 watch(() => [authState.ready, authState.user?.uid], load, { immediate: true })
 
 async function load() {
+  const version = ++loadVersion
+  error.value = ''
   ownReceipt.value = null
   activeSession.value = null
   childName.value = ''
@@ -107,15 +111,21 @@ async function load() {
     if (!authState.ready || !authState.user || isTeacherUser(authState.user)) return
     loading.value = true
     childName.value = authState.user.displayName || ''
-    ownReceipt.value = await getOwnSubmissionFromLocalSession()
-    if (!ownReceipt.value) {
-      activeSession.value = await getActiveSession()
-      if (activeSession.value) restoreDraft(activeSession.value.id)
+    const session = await getActiveSession()
+    if (version !== loadVersion) return
+    const candidates = session ? [session] : await listSessions()
+    for (const candidate of candidates) {
+      const receipt = await getOwnSubmissionForSession(candidate.id)
+      if (version !== loadVersion) return
+      if (receipt) { ownReceipt.value = receipt; break }
     }
+    if (version !== loadVersion) return
+    activeSession.value = session
+    if (!ownReceipt.value && session) restoreDraft(session.id)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Не вдалося завантажити форму'
+    if (version === loadVersion) error.value = err instanceof Error ? err.message : 'Не вдалося завантажити форму'
   } finally {
-    loading.value = false
+    if (version === loadVersion) loading.value = false
   }
 }
 

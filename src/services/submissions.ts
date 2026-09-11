@@ -1,5 +1,6 @@
 import {
   collection,
+  runTransaction,
   doc,
   getDoc,
   getDocs,
@@ -136,6 +137,18 @@ export async function createSubmission(input: { sessionId: string; childName: st
   return { submissionId, receiptToken }
 }
 
+// Resolve the same account's submission on any device, without a local receipt token.
+export async function getOwnSubmissionForSession(sessionId: string): Promise<ChildReceipt | null> {
+  const user = getFirebaseAuth().currentUser
+  if (!user) return null
+  const id = buildSubmissionId(sessionId, '', user.uid)
+  const snap = await getDoc(doc(getFirebaseDb(), 'submissions', id))
+  if (getFirebaseAuth().currentUser?.uid !== user.uid || !snap.exists()) return null
+  const data = snap.data()
+  if (data.childUid !== user.uid) return null
+  return mapReceipt(id, { ...data, submissionId: id })
+}
+
 export async function getOwnSubmissionFromLocalSession(): Promise<ChildReceipt | null> {
   const local = getLocalSubmissionSession()
   if (!local) return null
@@ -205,4 +218,24 @@ export async function listUserScoreStats(): Promise<UserScoreStats[]> {
   const db = getFirebaseDb()
   const snapshot = await getDocs(query(collection(db, 'users'), orderBy('totalScore', 'desc')))
   return snapshot.docs.map((item) => mapUserScoreStats(item.id, item.data()))
+}
+
+export async function correctReviewedScores(submissionId: string, scores: Scores): Promise<void> {
+  if (Object.values(scores).some(score => !Number.isInteger(score) || Number(score) < 1 || Number(score) > 5)) {
+    throw new Error('Бал має бути від 1 до 5')
+  }
+  const db = getFirebaseDb()
+  await runTransaction(db, async transaction => {
+    const ref = doc(db, 'submissions', submissionId)
+    const snap = await transaction.get(ref)
+    if (!snap.exists() || !snap.data().reviewed) throw new Error('Перевірену відповідь не знайдено')
+    const current = mapSubmission(snap.id, snap.data())
+    const totalScore = calculateTotalScore(scores)
+    transaction.update(ref, { scores, totalScore, reviewedAt: serverTimestamp() })
+    if (current.childUid && totalScore !== current.totalScore) {
+      transaction.update(doc(db, 'users', current.childUid), {
+        totalScore: increment(totalScore - current.totalScore), updatedAt: serverTimestamp(),
+      })
+    }
+  })
 }
